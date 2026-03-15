@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  rtsp_recorder:
+    build: .
+    container_name: rtsp_recorder
+    restart: always
+    volumes:
+      - /mnt/storage1/rtsp_disk:/mnt/storage1/rtsp_disk
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      - TZ=Europe/Bucharest
+      - RTSP_URL=rtsp://sd6csc3:12345678@192.168.50.50:8554/stream1
+      - RTSP_USER=
+      - RTSP_PASS=
+      - OUTPUT_DIR=/mnt/storage1/rtsp_disk
+      - SEGMENT_MINUTES=5
+      - MAX_DISK_USAGE=90
+      - FFMPEG_LOGLEVEL=info
+      - RTSP_TIMEOUT_OPTION=
+      - RTSP_TIMEOUT_US=
+      - OUTPUT_EXT=mkv

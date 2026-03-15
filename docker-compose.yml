@@ -5,13 +5,14 @@ services:
     build: .
     container_name: rtsp_recorder
     restart: always
+    network_mode: host
     volumes:
       - /mnt/storage1/rtsp_disk:/mnt/storage1/rtsp_disk
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:
       - TZ=Europe/Bucharest
-      - RTSP_URL=rtsp://sd6csc3:12345678@192.168.50.50:8554/stream1
+      - RTSP_URL=rtsp://sd6csc3:12345678@localhost:8554/stream1
       - RTSP_USER=
       - RTSP_PASS=
       - OUTPUT_DIR=/mnt/storage1/rtsp_disk

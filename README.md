@@ -2,6 +2,26 @@
 
 Recorder RTSP bazat pe `ffmpeg`, rulat in container, cu segmentare video pe fisiere de durata fixa.
 
+## Arhitectura
+
+```
+Camera IP (flux RTSP)
+        |
+        v
+  MediaMTX (proxy RTSP)
+  ruleaza direct pe host
+  localhost:8554/stream1
+        |
+        v
+  rtsp_recorder (container, network_mode: host)
+  citeste stream de la MediaMTX via localhost
+        |
+        v
+  /mnt/storage1/rtsp_disk/YYYY-MM-DD/HHmmss.mkv
+```
+
+MediaMTX primeste fluxul de la camera, il restreameaza local, iar containerul `rtsp_recorder` il captureaza si il salveaza pe disc in segmente.
+
 ## Ce face
 
 - Citeste stream RTSP de la MediaMTX/camera.

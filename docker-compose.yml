@@ -1,5 +1,12 @@
 version: "3.9"
 
+# Arhitectura:
+#   Camera IP (flux RTSP) --> MediaMTX (proxy RTSP, ruleaza direct pe host, localhost:8554)
+#                                  |
+#                          rtsp_recorder (container)
+#                                  |
+#                     segmente video --> /mnt/storage1/rtsp_disk/YYYY-MM-DD/
+
 services:
   rtsp_recorder:
     build: .

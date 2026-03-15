@@ -1,8 +1,16 @@
 # RTSP Recorder
 
-Recorder RTSP bazat pe `ffmpeg`, rulat in container, cu segmentare video pe fisiere de durata fixa.
+---
 
-## Arhitectura
+## 🇷🇴 Română
+
+### Descriere
+
+Recorder RTSP bazat pe `ffmpeg`, rulat in container Podman, cu segmentare video pe fisiere de durata fixa.
+MediaMTX ruleaza direct pe host si captureaza fluxul RTSP de la camera IP, restreameaza local pe `localhost:8554`.
+Containerul `rtsp_recorder` se conecteaza la MediaMTX via `localhost` si salveaza segmente video pe disc.
+
+### Arhitectura
 
 ```
 Camera IP (flux RTSP)
@@ -20,43 +28,35 @@ Camera IP (flux RTSP)
   /mnt/storage1/rtsp_disk/YYYY-MM-DD/HHmmss.mkv
 ```
 
-MediaMTX primeste fluxul de la camera, il restreameaza local, iar containerul `rtsp_recorder` il captureaza si il salveaza pe disc in segmente.
+### Ce face
 
-## Ce face
-
-- Citeste stream RTSP de la MediaMTX/camera.
-- Salveaza segmente video in folderul de output (implicit 5 minute).
+- Citeste stream RTSP de la MediaMTX via `localhost`.
+- Salveaza segmente video pe disc (implicit 5 minute per segment).
 - Creeaza subfoldere pe zile (`YYYY-MM-DD`).
 - Sterge automat cel mai vechi fisier cand se depaseste pragul de utilizare disc.
-- Logheaza in fisier si in stdout (vizibil in logs container).
+- Logheaza in fisier si in stdout (vizibil cu `podman logs`).
 
-## Structura
+### Structura fisiere
 
 - `record_rtsp_ffmpeg.py` - scriptul principal de inregistrare.
 - `docker-compose.yml` - configuratie container si variabile de mediu.
 - `Dockerfile` - imagine Python + ffmpeg.
-- `container-rtsp_recorder.service` - unitate systemd (Podman-generated) pentru pornire la boot.
+- `container-rtsp_recorder.service` - unitate systemd pentru pornire la boot.
 
-## Configurare (docker-compose.yml)
+### Configurare (docker-compose.yml)
 
-Variabile importante:
+| Variabila | Descriere |
+|---|---|
+| `RTSP_URL` | URL stream RTSP (include user:parola@host:port/path) |
+| `RTSP_USER`, `RTSP_PASS` | Optional; injecteaza autentificarea daca nu e deja in URL |
+| `OUTPUT_DIR` | Folder de salvare segmente |
+| `SEGMENT_MINUTES` | Durata unui segment video |
+| `MAX_DISK_USAGE` | Prag % utilizare disc; sterge fisiere vechi |
+| `FFMPEG_LOGLEVEL` | Nivel log ffmpeg (`info`, `warning`) |
+| `OUTPUT_EXT` | Format fisier: `mkv` (recomandat) sau `mp4` |
+| `RTSP_TIMEOUT_OPTION`, `RTSP_TIMEOUT_US` | Lasa goale daca ffmpeg nu suporta optiunea |
 
-- `RTSP_URL` - URL stream RTSP (poate include user/parola in URL).
-- `RTSP_USER`, `RTSP_PASS` - optional; folosite pentru injectarea autentificarii daca `RTSP_URL` nu are deja `user:pass@`.
-- `OUTPUT_DIR` - path de salvare in container.
-- `SEGMENT_MINUTES` - durata unui segment.
-- `MAX_DISK_USAGE` - prag procentual de disk usage.
-- `FFMPEG_LOGLEVEL` - nivel log ffmpeg (`info`, `warning`, etc).
-- `OUTPUT_EXT` - `mkv` (recomandat) sau `mp4`.
-- `RTSP_TIMEOUT_OPTION`, `RTSP_TIMEOUT_US` - optional; lasate goale daca build-ul ffmpeg nu suporta optiunile.
-
-Exemplu URL autenticat:
-
-`rtsp://user:parola@192.168.50.50:8554/stream1`
-
-## Pornire manuala
-
-### Cu Podman Compose
+### Pornire manuala
 
 ```bash
 podman compose up -d --build --force-recreate
@@ -64,79 +64,168 @@ podman ps
 podman logs -f rtsp_recorder
 ```
 
-### Cu Docker Compose (daca folosesti docker CLI)
+### Verificare inregistrare
 
 ```bash
-docker compose up -d --build --force-recreate
-docker ps
-docker logs -f rtsp_recorder
-```
-
-## Verificare inregistrare
-
-1. Verifica logul:
-
-```bash
+# Urmareste logul live
 podman logs -f rtsp_recorder
-```
 
-2. Verifica fisierele generate:
-
-```bash
+# Verifica fisierele generate azi
 ls -lah /mnt/storage1/rtsp_disk/$(date +%F)
 ```
 
-3. Deschide segmentul in VLC.
-
-## Pornire automata dupa reboot (systemd + podman start)
-
-Fisierul `container-rtsp_recorder.service` porneste containerul existent `rtsp_recorder`:
+### Pornire automata dupa reboot (systemd)
 
 ```bash
-sudo cp /opt/parking/rtsp_recorder/container-rtsp_recorder.service /etc/systemd/system/container-rtsp_recorder.service
+sudo cp /opt/parking/rtsp_recorder/container-rtsp_recorder.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now container-rtsp_recorder.service
 sudo systemctl status container-rtsp_recorder.service
 ```
 
-Daca schimbi configuratia compose sau imaginea, recreeaza containerul inainte:
+Daca schimbi configuratia compose sau imaginea, recreeaza containerul:
 
 ```bash
 podman compose down
 podman compose up -d --build --force-recreate
 ```
 
-## Troubleshooting rapid
+### Troubleshooting
 
-### 1) `401 Unauthorized`
+**`401 Unauthorized`**
+- Verifica `RTSP_URL`, `RTSP_USER`, `RTSP_PASS`.
+- Verifica `readUser`/`readPass` in configuratia MediaMTX pentru path-ul `stream1`.
 
-- Verifica autentificarea din `RTSP_URL` sau `RTSP_USER`/`RTSP_PASS`.
-- Verifica `readUser/readPass` (si eventual `readIPs`) in configuratia MediaMTX pentru path-ul `stream1`.
+**`Unrecognized option 'stimeout'` sau `rw_timeout`**
+- Lasa goale in compose: `RTSP_TIMEOUT_OPTION=` si `RTSP_TIMEOUT_US=`
 
-### 2) `Unrecognized option 'rw_timeout'` sau `Unrecognized option 'stimeout'`
-
-- Lasa goale in `docker-compose.yml`:
-  - `RTSP_TIMEOUT_OPTION=`
-  - `RTSP_TIMEOUT_US=`
-
-### 3) Nu poate scrie fisiere
-
-- Verifica mount-ul host -> container pentru `OUTPUT_DIR`.
+**Nu poate scrie fisiere**
+- Verifica mount-ul volumului in compose.
 - Verifica permisiunile pe `/mnt/storage1/rtsp_disk`.
-- In logs apare explicit: `Nu pot scrie in OUTPUT_DIR=...`.
+- In log apare: `Nu pot scrie in OUTPUT_DIR=...`
 
-### 4) Nu apare containerul `rtsp_recorder`
-
+**Containerul nu apare**
 ```bash
 podman ps -a --filter name=rtsp_recorder
 podman inspect rtsp_recorder --format "Name={{.Name}} Status={{.State.Status}}"
 ```
 
-## Note
+**Mesajul `Emulate Docker CLI using podman`**
+```bash
+sudo touch /etc/containers/nodocker
+```
 
-- Mesajul `Emulate Docker CLI using podman` este informativ.
-- Pentru a-l ascunde:
+---
 
+## 🇬🇧 English
+
+### Description
+
+RTSP recorder based on `ffmpeg`, running in a Podman container, saving video in fixed-duration segments.
+MediaMTX runs directly on the host, capturing the RTSP stream from the IP camera and restreaming it locally on `localhost:8554`.
+The `rtsp_recorder` container connects to MediaMTX via `localhost` and saves video segments to disk.
+
+### Architecture
+
+```
+IP Camera (RTSP stream)
+        |
+        v
+  MediaMTX (RTSP proxy)
+  runs directly on host
+  localhost:8554/stream1
+        |
+        v
+  rtsp_recorder (container, network_mode: host)
+  reads stream from MediaMTX via localhost
+        |
+        v
+  /mnt/storage1/rtsp_disk/YYYY-MM-DD/HHmmss.mkv
+```
+
+### What it does
+
+- Reads RTSP stream from MediaMTX via `localhost`.
+- Saves video segments to disk (default 5 minutes per segment).
+- Creates daily subfolders (`YYYY-MM-DD`).
+- Automatically deletes the oldest file when disk usage exceeds the threshold.
+- Logs to file and stdout (visible via `podman logs`).
+
+### File structure
+
+- `record_rtsp_ffmpeg.py` - main recording script.
+- `docker-compose.yml` - container configuration and environment variables.
+- `Dockerfile` - Python + ffmpeg image.
+- `container-rtsp_recorder.service` - systemd unit for auto-start on boot.
+
+### Configuration (docker-compose.yml)
+
+| Variable | Description |
+|---|---|
+| `RTSP_URL` | RTSP stream URL (include user:password@host:port/path) |
+| `RTSP_USER`, `RTSP_PASS` | Optional; injects credentials if not already in URL |
+| `OUTPUT_DIR` | Folder where segments are saved |
+| `SEGMENT_MINUTES` | Duration of each video segment |
+| `MAX_DISK_USAGE` | Disk usage % threshold; deletes oldest files |
+| `FFMPEG_LOGLEVEL` | ffmpeg log level (`info`, `warning`) |
+| `OUTPUT_EXT` | Output format: `mkv` (recommended) or `mp4` |
+| `RTSP_TIMEOUT_OPTION`, `RTSP_TIMEOUT_US` | Leave empty if ffmpeg does not support the option |
+
+### Manual start
+
+```bash
+podman compose up -d --build --force-recreate
+podman ps
+podman logs -f rtsp_recorder
+```
+
+### Verify recordings
+
+```bash
+# Follow live log
+podman logs -f rtsp_recorder
+
+# Check today's recorded files
+ls -lah /mnt/storage1/rtsp_disk/$(date +%F)
+```
+
+### Auto-start on reboot (systemd)
+
+```bash
+sudo cp /opt/parking/rtsp_recorder/container-rtsp_recorder.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now container-rtsp_recorder.service
+sudo systemctl status container-rtsp_recorder.service
+```
+
+If you change compose config or rebuild the image, recreate the container first:
+
+```bash
+podman compose down
+podman compose up -d --build --force-recreate
+```
+
+### Troubleshooting
+
+**`401 Unauthorized`**
+- Check `RTSP_URL`, `RTSP_USER`, `RTSP_PASS`.
+- Check `readUser`/`readPass` in MediaMTX config for the `stream1` path.
+
+**`Unrecognized option 'stimeout'` or `rw_timeout`**
+- Leave empty in compose: `RTSP_TIMEOUT_OPTION=` and `RTSP_TIMEOUT_US=`
+
+**Cannot write files**
+- Check volume mount in compose.
+- Check permissions on `/mnt/storage1/rtsp_disk`.
+- Log shows: `Nu pot scrie in OUTPUT_DIR=...`
+
+**Container not found**
+```bash
+podman ps -a --filter name=rtsp_recorder
+podman inspect rtsp_recorder --format "Name={{.Name}} Status={{.State.Status}}"
+```
+
+**`Emulate Docker CLI using podman` message**
 ```bash
 sudo touch /etc/containers/nodocker
 ```

@@ -31,7 +31,7 @@ Camera IP (flux RTSP)
 ### Ce face
 
 - Citeste stream RTSP de la MediaMTX via `localhost`.
-- Salveaza segmente video pe disc (implicit 5 minute per segment).
+- Salveaza segmente video + audio pe disc (implicit 5 minute per segment).
 - Creeaza subfoldere pe zile (`YYYY-MM-DD`).
 - Sterge automat cel mai vechi fisier cand se depaseste pragul de utilizare disc.
 - Logheaza in fisier si in stdout (vizibil cu `podman logs`).
@@ -54,6 +54,8 @@ Camera IP (flux RTSP)
 | `MAX_DISK_USAGE` | Prag % utilizare disc; sterge fisiere vechi |
 | `FFMPEG_LOGLEVEL` | Nivel log ffmpeg (`info`, `warning`) |
 | `OUTPUT_EXT` | Format fisier: `mkv` (recomandat) sau `mp4` |
+| `AUDIO_ENABLED` | `1`/`0` pentru activare/dezactivare inregistrare audio |
+| `AUDIO_CODEC`, `AUDIO_BITRATE`, `AUDIO_FILTER` | Setari pentru codare audio (`copy` recomandat; sau `aac` + bitrate + filtru) |
 | `RTSP_TIMEOUT_OPTION`, `RTSP_TIMEOUT_US` | Lasa goale daca ffmpeg nu suporta optiunea |
 
 ### Pornire manuala
@@ -146,7 +148,7 @@ IP Camera (RTSP stream)
 ### What it does
 
 - Reads RTSP stream from MediaMTX via `localhost`.
-- Saves video segments to disk (default 5 minutes per segment).
+- Saves video + audio segments to disk (default 5 minutes per segment).
 - Creates daily subfolders (`YYYY-MM-DD`).
 - Automatically deletes the oldest file when disk usage exceeds the threshold.
 - Logs to file and stdout (visible via `podman logs`).
@@ -169,6 +171,8 @@ IP Camera (RTSP stream)
 | `MAX_DISK_USAGE` | Disk usage % threshold; deletes oldest files |
 | `FFMPEG_LOGLEVEL` | ffmpeg log level (`info`, `warning`) |
 | `OUTPUT_EXT` | Output format: `mkv` (recommended) or `mp4` |
+| `AUDIO_ENABLED` | `1`/`0` to enable/disable audio recording |
+| `AUDIO_CODEC`, `AUDIO_BITRATE`, `AUDIO_FILTER` | Audio encoding settings (`copy` recommended; or `aac` + bitrate + filter) |
 | `RTSP_TIMEOUT_OPTION`, `RTSP_TIMEOUT_US` | Leave empty if ffmpeg does not support the option |
 
 ### Manual start

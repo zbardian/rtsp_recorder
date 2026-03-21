@@ -29,7 +29,3 @@ services:
       - RTSP_TIMEOUT_OPTION=
       - RTSP_TIMEOUT_US=
       - OUTPUT_EXT=mkv
-      - AUDIO_ENABLED=1
-      - AUDIO_CODEC=copy
-      - AUDIO_BITRATE=64k
-      - AUDIO_FILTER=aresample=async=1

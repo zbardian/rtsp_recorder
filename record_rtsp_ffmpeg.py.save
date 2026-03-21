@@ -6,7 +6,6 @@ import subprocess
 import logging
 import sys
 import threading
-import json
 from urllib.parse import quote, urlsplit, urlunsplit
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
@@ -23,10 +22,6 @@ FFMPEG_LOGLEVEL = os.environ.get("FFMPEG_LOGLEVEL", "warning")
 RTSP_TIMEOUT_US = os.environ.get("RTSP_TIMEOUT_US", os.environ.get("RW_TIMEOUT_US", ""))
 RTSP_TIMEOUT_OPTION = os.environ.get("RTSP_TIMEOUT_OPTION", "").lstrip("-")
 OUTPUT_EXT = os.environ.get("OUTPUT_EXT", "mkv").lower().strip(".")
-AUDIO_ENABLED = os.environ.get("AUDIO_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
-AUDIO_CODEC = os.environ.get("AUDIO_CODEC", "copy").strip().lower() or "copy"
-AUDIO_BITRATE = os.environ.get("AUDIO_BITRATE", "64k").strip()
-AUDIO_FILTER = os.environ.get("AUDIO_FILTER", "aresample=async=1").strip()
 
 # ===== Logging rotativ =====
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -43,10 +38,22 @@ if not logger.handlers:
 
 # ===== Funcții utilitare =====
 def is_mount_available(path):
+    """Verifică dacă volumul extern este accesibil (compatibil Podman/Docker)."""
     return os.path.exists(path)
 
 def get_disk_usage_percent(path):
     return psutil.disk_usage(path).percent
+
+def delete_empty_dirs(path):
+    """Șterge directoarele goale, evitând folderul de azi."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    for root, dirs, files in os.walk(path, topdown=False):
+        for d in dirs:
+            if d == today: continue # Nu atingem folderul de azi
+            full_path = os.path.join(root, d)
+            if not os.listdir(full_path):
+                logger.info(f"Șterg director gol: {full_path}")
+                os.rmdir(full_path)
 
 def delete_oldest_file_if_needed():
     try:
@@ -65,12 +72,14 @@ def delete_oldest_file_if_needed():
         logger.error(f"Eroare la curățare disc: {e}")
 
 def wait_for_mount():
+    """Așteaptă până când discul este montat."""
     while not is_mount_available(OUTPUT_DIR):
         logger.warning(f"Discul extern {OUTPUT_DIR} nu este montat. Aștept 10 secunde...")
         time.sleep(10)
     logger.info(f"Discul {OUTPUT_DIR} este montat. Pornesc înregistrarea...")
 
 def ensure_output_writable(path):
+    """Verifică dacă path-ul de output este scriibil din container."""
     test_file = os.path.join(path, ".recorder_write_test")
     try:
         with open(test_file, "w", encoding="utf-8") as f:
@@ -82,6 +91,7 @@ def ensure_output_writable(path):
         return False
 
 def forward_ffmpeg_output(proc):
+    """Trimite output-ul ffmpeg în logger pentru vizibilitate în docker logs."""
     if proc.stdout is None:
         return
     for line in proc.stdout:
@@ -89,27 +99,8 @@ def forward_ffmpeg_output(proc):
         if line:
             logger.info("ffmpeg: %s", line)
 
-def probe_rtsp_streams(url):
-    cmd = [
-        "ffprobe",
-        "-v", "error",
-        "-print_format", "json",
-        "-show_streams",
-        "-rtsp_transport", "tcp",
-        url,
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-        if result.returncode != 0:
-            logger.warning("ffprobe a eșuat (code=%s): %s", result.returncode, (result.stderr or "").strip())
-            return None
-        payload = json.loads(result.stdout or "{}")
-        return payload.get("streams", [])
-    except Exception as e:
-        logger.warning("Nu am putut rula ffprobe pentru diagnostic audio: %s", e)
-        return None
-
 def build_rtsp_url(base_url, user, password):
+    """Construiește URL RTSP cu autentificare când user/parolă sunt definite."""
     if not user:
         return base_url
     parsed = urlsplit(base_url)
@@ -124,6 +115,7 @@ def build_rtsp_url(base_url, user, password):
     return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
 def sanitize_rtsp_url(url):
+    """Ascunde parola din URL pentru log-uri."""
     parsed = urlsplit(url)
     if parsed.password is None:
         return url
@@ -135,24 +127,19 @@ def sanitize_rtsp_url(url):
 
 EFFECTIVE_RTSP_URL = build_rtsp_url(RTSP_URL, RTSP_USER, RTSP_PASS)
 
-streams = probe_rtsp_streams(EFFECTIVE_RTSP_URL)
-if streams is not None:
-    audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
-    video_streams = [s for s in streams if s.get("codec_type") == "video"]
-    logger.info("Diagnostic stream: video=%s audio=%s", len(video_streams), len(audio_streams))
-    if audio_streams:
-        a0 = audio_streams[0]
-        logger.info(
-            "Audio detectat: codec=%s sample_rate=%s channels=%s",
-            a0.get("codec_name", "?"),
-            a0.get("sample_rate", "?"),
-            a0.get("channels", "?"),
-        )
-    elif AUDIO_ENABLED:
-        logger.warning("Nu există stream audio în sursa RTSP. Verifică sursa/MediaMTX/path-ul (ex: stream principal).")
-
 # ===== Loop principal de captură =====
 logger.info("Pornire serviciu înregistrare RTSP...")
+logger.info(
+    "Config: RTSP_URL=%s, OUTPUT_DIR=%s, SEGMENT_MINUTES=%s, MAX_DISK_USAGE=%s, FFMPEG_LOGLEVEL=%s, OUTPUT_EXT=%s, RTSP_TIMEOUT_OPTION=%s, RTSP_TIMEOUT_US=%s",
+    sanitize_rtsp_url(EFFECTIVE_RTSP_URL),
+    OUTPUT_DIR,
+    SEGMENT_MINUTES,
+    MAX_DISK_USAGE,
+    FFMPEG_LOGLEVEL,
+    OUTPUT_EXT,
+    RTSP_TIMEOUT_OPTION,
+    RTSP_TIMEOUT_US,
+)
 
 while True:
     wait_for_mount()
@@ -160,7 +147,6 @@ while True:
     today = datetime.now().strftime("%Y-%m-%d")
     day_dir = os.path.join(OUTPUT_DIR, today)
     os.makedirs(day_dir, exist_ok=True)
-    
     if not ensure_output_writable(day_dir):
         time.sleep(10)
         continue
@@ -168,12 +154,29 @@ while True:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     outfile = os.path.join(day_dir, f"{timestamp}.{OUTPUT_EXT}")
 
-    # Comandă FFMPEG corectată pentru Tapo C310
+    # Am dezactivat audio (-an) pentru a evita eroarea pcm_alaw în container MP4
+    # Dacă vrei totuși sunet :  În loc de -an, poți folosi -c:a aac
+#ffmpeg_cmd = [
+#        "ffmpeg",
+#        "-hide_banner",
+#        "-loglevel", FFMPEG_LOGLEVEL,
+#        "-rtsp_transport", "tcp",
+#    ]
+#
+#    if RTSP_TIMEOUT_OPTION and RTSP_TIMEOUT_US:
+#        ffmpeg_cmd.extend([f"-{RTSP_TIMEOUT_OPTION}", RTSP_TIMEOUT_US])
+#
+#    ffmpeg_cmd.extend([
+#        "-i", EFFECTIVE_RTSP_URL,
+#        "-c:v", "copy",
+#        "-c:a aac",
+#        "-t", str(SEGMENT_MINUTES * 60),
+#    ])
     ffmpeg_cmd = [
         "ffmpeg",
         "-hide_banner",
         "-loglevel", FFMPEG_LOGLEVEL,
-        "-use_wallclock_as_timestamps", "1",
+        "-use_wallclock_as_timestamps", "1", # Sincronizare pentru Tapo C310
         "-rtsp_transport", "tcp",
     ]
 
@@ -182,22 +185,12 @@ while True:
 
     ffmpeg_cmd.extend([
         "-i", EFFECTIVE_RTSP_URL,
-        "-map", "0:v:0",             # Mapare explicită video
-        "-c:v", "copy",              # Stream copy pentru video
+        "-c:v", "copy",              # Video ramane neatins
+        "-c:a", "aac",               # Corect: elemente separate
+        "-b:a", "64k",               # Bitrate audio
+        "-af", "aresample=async=1",  # "Lipește" sunetul sacadat de la Tapo
         "-t", str(SEGMENT_MINUTES * 60),
     ])
-
-    if AUDIO_ENABLED:
-        # Folosește mapare audio opțională: dacă streamul nu are audio, ffmpeg nu eșuează.
-        ffmpeg_cmd.extend(["-map", "0:a?"])
-        ffmpeg_cmd.extend(["-c:a", AUDIO_CODEC])
-        if AUDIO_CODEC != "copy":
-            if AUDIO_BITRATE:
-                ffmpeg_cmd.extend(["-b:a", AUDIO_BITRATE])
-            if AUDIO_FILTER:
-                ffmpeg_cmd.extend(["-af", AUDIO_FILTER])
-    else:
-        ffmpeg_cmd.append("-an")
 
     if OUTPUT_EXT == "mp4":
         ffmpeg_cmd.extend(["-movflags", "+faststart"])
@@ -222,19 +215,27 @@ while True:
             if not is_mount_available(OUTPUT_DIR):
                 logger.error("HDD deconectat! Opresc ffmpeg...")
                 proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
                 break
+
             delete_oldest_file_if_needed()
+            # Am dezactivat ștergerea directoarelor în timpul scrierii
+            # delete_empty_dirs(OUTPUT_DIR)
             time.sleep(10)
 
-        proc.wait()
         forwarder.join(timeout=2)
-        
         if proc.returncode not in (0, None):
-            logger.error("ffmpeg s-a oprit cu eroare (returncode=%s).", proc.returncode)
-        
-        logger.info(f"Segment terminat (status: {proc.returncode})")
+            logger.error(
+                "ffmpeg s-a oprit cu eroare (returncode=%s). Verifică URL-ul RTSP și autentificarea.",
+                proc.returncode,
+            )
+
+        logger.info(f"Segment terminat sau proces închis (status: {proc.returncode})")
 
     except Exception as e:
-        logger.exception(f"Eroare la rularea ffmpeg: {e}")
+        logger.exception(f"Eroare fatală la rularea ffmpeg: {e}")
 
     time.sleep(5)

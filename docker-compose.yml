@@ -19,17 +19,18 @@ services:
       - /etc/timezone:/etc/timezone:ro
     environment:
       - TZ=Europe/Bucharest
-      - RTSP_URL=rtsp://sd6csc3:12345678@127.0.0.1:8554/stream1
-      - RTSP_USER=
-      - RTSP_PASS=
+      - RTSP_URL=rtsp://192.168.50.50:8554/stream1
+      - RTSP_USER=sd6csc3
+      - RTSP_PASS=12345678
       - OUTPUT_DIR=/mnt/storage1/rtsp_disk
       - SEGMENT_MINUTES=5
+      - SEGMENT_SECONDS=0
       - MAX_DISK_USAGE=90
       - FFMPEG_LOGLEVEL=info
       - RTSP_TIMEOUT_OPTION=
       - RTSP_TIMEOUT_US=
-      - OUTPUT_EXT=mkv
+      - OUTPUT_EXT=mp4
       - AUDIO_ENABLED=1
-      - AUDIO_CODEC=copy
-      - AUDIO_BITRATE=64k
-      - AUDIO_FILTER=aresample=async=1
+      - AUDIO_CODEC=aac
+      - AUDIO_BITRATE=48k
+      - AUDIO_FILTER=aresample=async=1:first_pts=0
